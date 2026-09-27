@@ -255,7 +255,12 @@
           </div>
           <div class="site-footer__bottom">
             <span>© 2026 Serap Yıldırım</span>
-            <span>Made by Serap Yıldırım</span>
+            <p class="site-footer__credit">
+              Designed &amp; built by
+              <a href="https://www.linkedin.com/in/erenayvaz" target="_blank" rel="noopener noreferrer">Eren Ayvaz</a>
+              and
+              <a href="${escapeHTML(DATA.site.social.linkedin)}" target="_blank" rel="noopener noreferrer">Serap Yıldırım</a>
+            </p>
           </div>
         </footer>
       `;
