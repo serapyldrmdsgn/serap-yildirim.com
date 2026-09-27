@@ -16,3 +16,4 @@ assets/avatar/*.jpeg
 .DS_Store
 Thumbs.db
 desktop.ini
+.vercel
