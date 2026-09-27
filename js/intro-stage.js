@@ -354,6 +354,11 @@
     const render = (now) => {
       frameId = 0;
       if (stopped || !visible || document.hidden) return;
+      if (document.body.classList.contains("menu-open")) {
+        previous = now;
+        request();
+        return;
+      }
       const dt = Math.min(0.05, (now - previous) / 1000);
       previous = now;
       ctx.time += dt;
