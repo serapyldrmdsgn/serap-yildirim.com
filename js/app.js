@@ -3084,7 +3084,7 @@
     updateScreenEdge();
   }
 
-  const SOUND_SRC = "assets/audio/sax-and-piano-soft.mp3";
+  const SOUND_SRC = "assets/audio/sax-and-piano-room.mp3";
   const SOUND_PREF_KEY = "serap-portfolio-sound";
   const SOUND_MUTED_KEY = "serap-portfolio-sound-muted";
   const SOUND_TIME_KEY = "serap-portfolio-sound-time";
@@ -3174,13 +3174,14 @@
     };
 
     // An attempt made without a gesture may still be waiting when the visitor's first touch arrives; the
-    // touch is never made to wait for it.
+    // touch is never made to wait for it. The opening attempt starts at full volume: Chrome only allows
+    // sound before a gesture when it judges the media quiet, and a fade from silence fails that judgement.
     const start = (fromGesture = false) => {
       if (playing || ducked || (pending && (pendingGesture || !fromGesture))) return;
       pending += 1;
       pendingGesture = fromGesture;
       window.clearInterval(fadeTimer);
-      if (fades) audio.volume = 0;
+      if (fades) audio.volume = fromGesture ? 0 : 1;
       audio
         .play()
         .then(() => {
@@ -3191,7 +3192,7 @@
             return;
           }
           playing = true;
-          fadeTo(1, 2.4);
+          if (fromGesture) fadeTo(1, 2.4);
           render();
         })
         .catch(() => {
@@ -3282,20 +3283,29 @@
 
     render();
     if (!wanted) return;
-    // Where the browser already says autoplay is off, the file is not fetched until the first gesture. On
-    // phones the home page lets the intro clip load first, so the picture moves before the music.
+    // Chrome weighs whether media counts as quiet and may refuse the first attempt, so it is retried for a
+    // few seconds; the first gesture starts it immediately in any case. On phones the home page lets the
+    // intro clip load first, so the picture moves before the music.
+    let opening = 0;
+    const retryOpening = () => {
+      window.clearTimeout(opening);
+      if (!wanted || playing || ducked) return;
+      start();
+      opening = window.setTimeout(retryOpening, 1500);
+    };
+    window.setTimeout(() => window.clearTimeout(opening), 9000);
     if (navigator.getAutoplayPolicy?.("mediaelement") === "disallowed") return;
     const coarse = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
     const intro = page === "home" && coarse ? qs("#intro-video") : null;
     if (!intro || intro.readyState >= 2) {
-      start();
+      retryOpening();
       return;
     }
     let held = true;
     const release = () => {
       if (!held) return;
       held = false;
-      start();
+      retryOpening();
     };
     intro.addEventListener("loadeddata", release, { once: true });
     intro.addEventListener("error", release, { once: true });
