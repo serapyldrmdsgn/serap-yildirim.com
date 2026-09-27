@@ -3954,7 +3954,6 @@ body.is-inspecting .site-cursor {
 .home-intro__stage.is-ready {
   opacity: 1;
 }
-
 .home-intro__cue {
   position: absolute;
   bottom: clamp(1.5rem, 5svh, 3rem);
@@ -4003,6 +4002,11 @@ body.is-inspecting .site-cursor {
  * their bars, so the bars join the picture. The WebGL stage draws its own fade; these cover the plain video.
  */
 @media (hover: none) and (pointer: coarse) {
+  /* The 1px divider sits exactly on the first viewport's bottom edge; Safari would tint its toolbar with it. */
+  main > .home-intro {
+    border-bottom: 0;
+  }
+
   .home-intro:not(.has-stage)::after {
     position: absolute;
     inset: 0;
