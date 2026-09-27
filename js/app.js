@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   "use strict";
 
   const DATA = window.PORTFOLIO_DATA;
@@ -7,7 +7,7 @@
   const page = document.body.dataset.page || "home";
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const TRANSITION_MEDIA = [
-    "assets/home/Kırmızı-intro.mp4",
+    "assets/home/KÄ±rmÄ±zÄ±-intro.mp4",
     "assets/home/mavi .mp4",
     "assets/home/pembe.mp4",
     "assets/home/sari.mp4",
@@ -29,7 +29,7 @@
   };
   // Must match VIDEOS in tools/build-web-media.py.
   const WEB_VIDEO_SOURCES = new Set([
-    "Intro/Intro_yazılı.mp4",
+    "Intro/Intro_yazÄ±lÄ±.mp4",
     "Intro/Intro.mp4",
     ...TRANSITION_MEDIA,
     "assets/lab/0201(5).mp4",
@@ -144,7 +144,7 @@
     if (header) {
       header.innerHTML = `
         <header class="site-header">
-          <a class="site-header__name" href="index.html" aria-label="Serap Yıldırım home">
+          <a class="site-header__name" href="index.html" aria-label="Serap YÄ±ldÄ±rÄ±m home">
             <span>SERAP YILDIRIM</span>
           </a>
           <p class="site-header__role"><span>MULTIDISCIPLINARY DESIGNER</span></p>
@@ -239,7 +239,7 @@
               <a href="about.html">About</a>
             </nav>
             <div class="footer-column">
-              <h3>Serap Yıldırım</h3>
+              <h3>Serap YÄ±ldÄ±rÄ±m</h3>
               <a href="mailto:${escapeHTML(DATA.site.email)}">${escapeHTML(DATA.site.email)}</a>
             </div>
             <div class="footer-column">
@@ -254,8 +254,8 @@
             </div>
           </div>
           <div class="site-footer__bottom">
-            <span>© 2026 Serap Yıldırım</span>
-            <span>Made by Serap Yıldırım</span>
+            <span>Â© 2026 Serap YÄ±ldÄ±rÄ±m</span>
+            <span>Made by Serap YÄ±ldÄ±rÄ±m</span>
           </div>
         </footer>
       `;
@@ -928,7 +928,7 @@
                 <img
                   class="lab-media-sequence__frame${index === 0 ? " is-active" : ""}"
                   data-src="${escapeHTML(webImage(source))}"
-                  alt="${escapeHTML(item.title)} — ${String(index + 1).padStart(2, "0")}"
+                  alt="${escapeHTML(item.title)} â€” ${String(index + 1).padStart(2, "0")}"
                   loading="lazy"
                   decoding="async"
                 >
@@ -992,7 +992,7 @@
           class="project-card__advance"
           type="button"
           aria-label="Show ${escapeHTML(project.title)} as the active project"
-        ><span aria-hidden="true">→</span></button>
+        ><span aria-hidden="true">â†’</span></button>
       </article>
     `;
   }
@@ -1453,7 +1453,7 @@
             </header>
             <a class="work-project__lead" href="${projectURL(project)}" data-cursor="View project">
               ${lead}
-              <span class="work-project__open">↗</span>
+              <span class="work-project__open">â†—</span>
             </a>
             <div class="work-project__rail" aria-label="${escapeHTML(project.title)} image strip">
               ${rail}
@@ -1486,7 +1486,7 @@
           preloaded.onload = () => {
             if (token !== loadToken) return;
             leadImage.src = source;
-            leadImage.alt = `${article.querySelector(".work-project__title")?.textContent || "Project"} — image ${thumb.dataset.frame}`;
+            leadImage.alt = `${article.querySelector(".work-project__title")?.textContent || "Project"} â€” image ${thumb.dataset.frame}`;
             requestAnimationFrame(() => leadImage.classList.remove("is-swapping"));
           };
           preloaded.onerror = () => {
@@ -1532,7 +1532,7 @@
           )
           .join("")}
       </div>
-      <p class="work-lens__lab" hidden>More experiments live in the <a href="lab.html">Lab <span>→</span></a></p>
+      <p class="work-lens__lab" hidden>More experiments live in the <a href="lab.html">Lab <span>â†’</span></a></p>
     `;
 
     const chips = qsa(".work-lens__chip", lens);
@@ -2253,7 +2253,7 @@
       DATA.projects.find((item) => item.slug === slug) || DATA.projects[0];
     const projectIndex = DATA.projects.indexOf(project);
 
-    document.title = `${project.title} — Serap Yıldırım`;
+    document.title = `${project.title} â€” Serap YÄ±ldÄ±rÄ±m`;
     document.body.dataset.project = project.slug;
     if (project.tone) document.body.dataset.tone = project.tone;
 
@@ -2268,11 +2268,11 @@
         ? `<img src="${escapeHTML(webImage(project.cover))}" alt="${escapeHTML(project.title)}" fetchpriority="high"${coverStyle(project)}>`
         : `<div class="project-hero__placeholder">Visual documentation coming soon</div>`;
       hero.innerHTML = `
-        <a class="project-hero__back" href="work.html">← All work</a>
+        <a class="project-hero__back" href="work.html">â† All work</a>
         <figure class="project-hero__frame">
           ${visual}
           <figcaption class="project-hero__overlay">
-            <span class="project-hero__eyebrow">${escapeHTML(project.discipline)} · ${escapeHTML(project.year)}</span>
+            <span class="project-hero__eyebrow">${escapeHTML(project.discipline)} Â· ${escapeHTML(project.year)}</span>
             <h1 class="project-hero__title">${escapeHTML(project.title)}</h1>
           </figcaption>
         </figure>
@@ -2289,7 +2289,7 @@
           <dt>Discipline</dt><dd>${escapeHTML(project.discipline)}</dd>
           ${
             project.materials?.length
-              ? `<dt>Materials</dt><dd>${project.materials.map(escapeHTML).join(" · ")}</dd>`
+              ? `<dt>Materials</dt><dd>${project.materials.map(escapeHTML).join(" Â· ")}</dd>`
               : ""
           }
           ${
@@ -2343,7 +2343,7 @@
                 }
               </figure>
               <h3>${escapeHTML(item.title)}</h3>
-              <p>${escapeHTML(item.discipline)} · ${escapeHTML(item.year)}</p>
+              <p>${escapeHTML(item.discipline)} Â· ${escapeHTML(item.year)}</p>
             </a>
           `
         )
@@ -2452,7 +2452,7 @@
     }
     if (fold) classes.push("is-fold", `fold-${fold}`);
     if (fold === "corner") style.push(`--fold-axis: ${(-item.ratio).toFixed(4)}`);
-    const alt = item.document || `${project.title} — image ${position + 1}`;
+    const alt = item.document || `${project.title} â€” image ${position + 1}`;
 
     return `
       <figure class="${classes.join(" ")}" style="${escapeHTML(style.join("; "))}">
@@ -2607,7 +2607,7 @@
           <img src="${escapeHTML(webImage(reference.src))}" alt="${escapeHTML(reference.caption)}" ${imageSizeAttributes(reference.src)} loading="lazy" decoding="async">
           <figcaption>${escapeHTML(reference.caption)}</figcaption>
         </figure>
-        ${reference.next ? `<p class="reference__next"><span>${escapeHTML(reference.next)}</span><i aria-hidden="true">↓</i></p>` : ""}
+        ${reference.next ? `<p class="reference__next"><span>${escapeHTML(reference.next)}</span><i aria-hidden="true">â†“</i></p>` : ""}
       </section>
     `;
   }
@@ -2650,7 +2650,7 @@
     `;
     return `
       <section class="reduction section-pad" aria-label="From the heritage mark to the new emblem">
-        ${sectionTopline("Reduktion", `${reduction.from.title} → ${reduction.to.title}`)}
+        ${sectionTopline("Reduktion", `${reduction.from.title} â†’ ${reduction.to.title}`)}
         <div class="reduction__stage">
           ${mark("from", reduction.from)}
           <span class="reduction__line" aria-hidden="true"></span>
@@ -2733,9 +2733,9 @@
           </nav>
         </div>
         <div class="book-reader__controls">
-          <button class="round-control" type="button" data-book-step="-1" aria-label="Previous pages">←</button>
-          <span class="book-reader__hint">Turn the page at its edge, with ← → or by swiping</span>
-          <button class="round-control" type="button" data-book-step="1" aria-label="Next pages">→</button>
+          <button class="round-control" type="button" data-book-step="-1" aria-label="Previous pages">â†</button>
+          <span class="book-reader__hint">Turn the page at its edge, with â† â†’ or by swiping</span>
+          <button class="round-control" type="button" data-book-step="1" aria-label="Next pages">â†’</button>
         </div>
       </section>
     `;
@@ -2786,7 +2786,7 @@
       }
       const source = pageSource(number);
       if (image.getAttribute("src") !== source) image.src = source;
-      image.alt = `${book.title} — page ${number}`;
+      image.alt = `${book.title} â€” page ${number}`;
     };
 
     const loadPages = (numbers) =>
@@ -2815,7 +2815,7 @@
       const last = Math.max(...pages);
       position.textContent =
         pages.length > 1
-          ? `pp. ${pad2(pages[0])}–${pad2(pages[1])} / ${book.pages}`
+          ? `pp. ${pad2(pages[0])}â€“${pad2(pages[1])} / ${book.pages}`
           : `p. ${pad2(pages[0])} / ${book.pages}`;
       let activeTab = -1;
       book.tabs.forEach((tab, index) => {
@@ -3069,7 +3069,7 @@
     updateScreenEdge();
   }
 
-  const SOUND_SRC = "assets/audio/sax-and-piano.mp3";
+  const SOUND_SRC = "assets/audio/sax-and-piano-soft.mp3";
   const SOUND_PREF_KEY = "serap-portfolio-sound";
   const SOUND_MUTED_KEY = "serap-portfolio-sound-muted";
   const SOUND_TIME_KEY = "serap-portfolio-sound-time";
