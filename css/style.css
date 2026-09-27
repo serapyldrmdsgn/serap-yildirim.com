@@ -97,13 +97,22 @@ body {
   scrollbar-width: none;
 }
 
-/* Mobile browsers paint their status and tool bars with the page background, so it follows what fills the screen. */
-html.is-edge-intro {
-  background: #1d0508;
+/*
+ * Safari 26 fills the status bar and the area below its toolbar with the body's background colour, so body
+ * follows what fills the screen while main carries the page colour itself.
+ */
+main {
+  background-color: var(--black);
 }
 
-html.is-edge-menu {
-  background: #020202;
+html.is-edge-intro,
+html.is-edge-intro body {
+  background-color: #1a0103;
+}
+
+html.is-edge-menu,
+html.is-edge-menu body {
+  background-color: #020202;
 }
 
 html::-webkit-scrollbar,
@@ -3959,9 +3968,10 @@ body.is-inspecting .site-cursor {
     bottom: calc(clamp(1.5rem, 5svh, 3rem) + 100lvh - 100svh);
   }
 
+  /* Safari 26 stops fixed boxes above its toolbar unless they reach well past the viewport. */
   .site-menu {
     bottom: auto;
-    height: 100lvh;
+    height: calc(100lvh + 12rem);
     align-items: flex-start;
   }
 

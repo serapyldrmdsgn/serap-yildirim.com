@@ -12,8 +12,17 @@
     "assets/home/pembe.mp4",
     "assets/home/sari.mp4",
   ];
-  // Pre-rendered by tools/build-web-media.py: TRANSITION_MEDIA in order, each compressed into one 500 ms slot.
-  const TRANSITION_SEQUENCE = "assets/web/transition/serap-yildirim-sequence.mp4";
+  // TRANSITION_MEDIA in order, each compressed into one 500 ms slot (serap-yildirim-sequence.mp4 from
+  // tools/build-web-media.py), laid out as a sheet of stills (ffmpeg fps=20, scale=384:216, tile=8x5) and drawn
+  // frame by frame: an image is ready the moment it is cached, where phones make a <video> wait for their media pipeline.
+  const TRANSITION_FILM = {
+    src: "assets/web/transition/serap-yildirim-sequence.jpg",
+    frames: 40,
+    columns: 8,
+    width: 384,
+    height: 216,
+    fps: 20,
+  };
   const TRANSITION_MARKS = {
     serap: "assets/Gecis ekrani png leri/Serap.png",
     yildirim: "assets/Gecis ekrani png leri/YILDIRIM.png",
@@ -201,7 +210,7 @@
     }
 
     if (transition) {
-      const wordVideos = `<video class="page-transition__word-video" src="${escapeHTML(mediaURL(TRANSITION_SEQUENCE))}" muted playsinline preload="auto" aria-hidden="true" tabindex="-1"></video>`;
+      const wordVideos = `<canvas class="page-transition__word-video" aria-hidden="true"></canvas>`;
       transition.innerHTML = `
         <div class="page-transition__panel page-transition__panel--left">
           <span class="page-transition__word page-transition__word--serap" aria-label="Serap">
@@ -450,15 +459,22 @@
     const OPEN_DURATION = reducedMotion ? 220 : 1000;
     const CLOSE_DURATION = reducedMotion ? 80 : 650;
     // Phones can spend most of the hold loading the next page; the curtain then waits a little for the film.
-    const VIDEO_GRACE = 1400;
-    const VIDEO_MIN_SHOW = 900;
+    const FILM_GRACE = 1400;
+    const FILM_MIN_SHOW = 900;
     const TIMELINE_KEY = "serap-portfolio-transition-start";
-    const transitionVideos = qsa(".page-transition__word-video", overlay);
+    const filmCanvases = qsa(".page-transition__word-video", overlay);
     const words = qsa(".page-transition__word", overlay);
     const transitionTimers = new Set();
-    let videoGeneration = 0;
-    let videoShownAt = 0;
-    let videoRefused = false;
+    const film = new Image();
+    film.decoding = "async";
+    film.src = mediaURL(TRANSITION_FILM.src);
+    let filmFailed = false;
+    film.addEventListener("error", () => {
+      filmFailed = true;
+    });
+    let filmGeneration = 0;
+    let filmFrame = 0;
+    let filmShownAt = 0;
     let navigating = false;
 
     const schedule = (callback, delay) => {
@@ -529,61 +545,75 @@
     };
 
     const stopTransitionVideos = () => {
-      videoGeneration += 1;
-      videoShownAt = 0;
-      videoRefused = false;
+      filmGeneration += 1;
+      filmShownAt = 0;
+      cancelAnimationFrame(filmFrame);
+      filmFrame = 0;
       words.forEach((word) => word.classList.remove("has-active-video"));
-      transitionVideos.forEach((video) => {
-        video.classList.remove("is-active");
-        video.pause();
-        try {
-          video.currentTime = 0;
-        } catch {
-          // A source may not have metadata yet.
-        }
-      });
+      filmCanvases.forEach((canvas) => canvas.classList.remove("is-active"));
     };
 
-    // The sequence clip lasts exactly VIDEO_HOLD_DURATION, so the clip clock equals the timeline clock;
-    // a film that starts late keeps at least VIDEO_MIN_SHOW of the clip ahead of it.
+    // Each word shows the whole frame cropped to cover it, as object-fit: cover did for the video.
+    const drawFilmFrame = (seconds) => {
+      const { frames, columns, width, height, fps } = TRANSITION_FILM;
+      const index = Math.min(frames - 1, Math.max(0, Math.floor(seconds * fps)));
+      const cellX = (index % columns) * width;
+      const cellY = Math.floor(index / columns) * height;
+      const ratio = Math.min(2, window.devicePixelRatio || 1);
+      let drawn = false;
+      filmCanvases.forEach((canvas) => {
+        const boxWidth = canvas.offsetWidth;
+        const boxHeight = canvas.offsetHeight;
+        if (!boxWidth || !boxHeight) return;
+        const pixelWidth = Math.round(boxWidth * ratio);
+        const pixelHeight = Math.round(boxHeight * ratio);
+        if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+          canvas.width = pixelWidth;
+          canvas.height = pixelHeight;
+        }
+        const aspect = boxWidth / boxHeight;
+        const sourceWidth = Math.min(width, height * aspect);
+        const sourceHeight = sourceWidth / aspect;
+        const context = canvas.getContext("2d");
+        if (!context) return;
+        context.drawImage(
+          film,
+          cellX + (width - sourceWidth) / 2,
+          cellY + (height - sourceHeight) / 2,
+          sourceWidth,
+          sourceHeight,
+          0,
+          0,
+          pixelWidth,
+          pixelHeight
+        );
+        drawn = true;
+      });
+      return drawn;
+    };
+
+    // The film lasts exactly VIDEO_HOLD_DURATION, so the film clock equals the timeline clock;
+    // a film that starts late keeps at least FILM_MIN_SHOW of it ahead.
     const startTransitionVideos = (timelineStart) => {
       stopTransitionVideos();
       if (reducedMotion || VIDEO_HOLD_DURATION <= 0) return;
-      const generation = videoGeneration;
-      if (Date.now() - timelineStart >= VIDEO_HOLD_DURATION + VIDEO_GRACE) return;
-
-      // Mobile Safari fetches nothing until play() is called, so playback starts at once and seeks once it can.
-      transitionVideos.forEach((video) => {
-        const word = video.closest(".page-transition__word");
-        const syncToTimeline = () => {
-          if (generation !== videoGeneration || video.readyState < 1) return;
-          const clipEnd = video.duration || VIDEO_HOLD_DURATION / 1000;
-          const target = Math.max(0, Math.min((Date.now() - timelineStart) / 1000, clipEnd - VIDEO_MIN_SHOW / 1000));
-          if (Math.abs(video.currentTime - target) < 0.12) return;
-          try {
-            video.currentTime = target;
-          } catch {
-            // Seeking waits for metadata; loadedmetadata calls this again.
+      const generation = filmGeneration;
+      let lag = -1;
+      const tick = () => {
+        if (generation !== filmGeneration) return;
+        const elapsed = Date.now() - timelineStart;
+        if (filmShownAt === 0 && (filmFailed || elapsed >= VIDEO_HOLD_DURATION + FILM_GRACE)) return;
+        if (film.complete && film.naturalWidth > 0) {
+          if (lag < 0) lag = Math.max(0, elapsed - (VIDEO_HOLD_DURATION - FILM_MIN_SHOW));
+          if (drawFilmFrame((elapsed - lag) / 1000) && !filmShownAt) {
+            filmShownAt = Date.now();
+            filmCanvases.forEach((canvas) => canvas.classList.add("is-active"));
+            words.forEach((word) => word.classList.add("has-active-video"));
           }
-        };
-        video.playbackRate = 1;
-        syncToTimeline();
-        video.addEventListener("loadedmetadata", syncToTimeline, { once: true });
-        video
-          .play()
-          .then(() => {
-            if (generation !== videoGeneration) return;
-            syncToTimeline();
-            videoShownAt = videoShownAt || Date.now();
-            video.classList.add("is-active");
-            word?.classList.add("has-active-video");
-          })
-          .catch((error) => {
-            if (generation === videoGeneration && error?.name === "NotAllowedError") videoRefused = true;
-            video.classList.remove("is-active");
-            word?.classList.remove("has-active-video");
-          });
-      });
+        }
+        filmFrame = requestAnimationFrame(tick);
+      };
+      tick();
     };
 
     const revealPage = (forceNewTimeline = false) => {
@@ -618,11 +648,11 @@
         }, remaining);
       };
 
-      const latest = timelineStart + VIDEO_HOLD_DURATION + VIDEO_GRACE;
+      const latest = timelineStart + VIDEO_HOLD_DURATION + FILM_GRACE;
       const openWhenSeen = () => {
         const now = Date.now();
-        const due = videoShownAt ? videoShownAt + VIDEO_MIN_SHOW : latest;
-        if (reducedMotion || videoRefused || now >= Math.min(due, latest)) startOpening();
+        const due = filmShownAt ? filmShownAt + FILM_MIN_SHOW : latest;
+        if (reducedMotion || filmFailed || now >= Math.min(due, latest)) startOpening();
         else schedule(openWhenSeen, Math.min(due, latest) - now);
       };
       schedule(openWhenSeen, Math.max(0, VIDEO_HOLD_DURATION - (Date.now() - timelineStart)));
@@ -2985,9 +3015,10 @@
     `;
   }
 
-  const EDGE_COLORS = { page: "#3f0e15", intro: "#1d0508", menu: "#020202" };
+  const EDGE_COLORS = { page: "#3f0e15", intro: "#1a0103", menu: "#020202" };
 
-  // Status and tool bars of mobile browsers take the colour of whatever currently fills the screen.
+  // Status and tool bars of mobile browsers take the colour of whatever currently fills the screen:
+  // Chrome and Samsung Internet read theme-color, Safari 26 reads the body background.
   function updateScreenEdge() {
     const body = document.body;
     let edge = "page";
@@ -3025,6 +3056,7 @@
   const SOUND_SRC = "assets/audio/sax-and-piano.mp3";
   const SOUND_VOLUME = 0.3;
   const SOUND_PREF_KEY = "serap-portfolio-sound";
+  const SOUND_MUTED_KEY = "serap-portfolio-sound-muted";
   const SOUND_TIME_KEY = "serap-portfolio-sound-time";
 
   function readStored(storage, key) {
@@ -3043,8 +3075,9 @@
     }
   }
 
-  // Browsers only allow sound after a tap, click or key press, so the melody starts with the first one
-  // and picks up on every page where the previous one left off, unless the visitor has switched it off.
+  // The melody tries to start as the page opens; where the browser holds sound back until the visitor
+  // touches, clicks or types, it starts with the first of those. It picks up on every page where the previous
+  // one left off. Switching it off lasts for the visit (the tab's session); a later visit plays again.
   function initSoundtrack() {
     const button = qs("#sound-toggle");
     if (!button) return;
@@ -3055,7 +3088,12 @@
     audio.preload = "none";
     audio.src = `${mediaURL(SOUND_SRC)}${savedTime > 0 ? `#t=${savedTime.toFixed(2)}` : ""}`;
 
-    let wanted = readStored(localStorage, SOUND_PREF_KEY) !== "off";
+    try {
+      localStorage.removeItem(SOUND_PREF_KEY);
+    } catch {
+      // An older build kept the choice across visits; nothing to clear without storage.
+    }
+    let wanted = readStored(sessionStorage, SOUND_MUTED_KEY) !== "1";
     let playing = false;
     let starting = false;
     let context = null;
@@ -3157,7 +3195,7 @@
 
     button.addEventListener("click", () => {
       wanted = !playing;
-      writeStored(localStorage, SOUND_PREF_KEY, wanted ? "on" : "off");
+      writeStored(sessionStorage, SOUND_MUTED_KEY, wanted ? "0" : "1");
       if (wanted) start(true);
       else stop();
     });
@@ -3166,7 +3204,7 @@
       if (!wanted || playing || button.contains(event.target)) return;
       start(true);
     };
-    ["pointerup", "touchend", "mousedown", "keydown", "click"].forEach((type) =>
+    ["touchstart", "pointerdown", "pointerup", "touchend", "mousedown", "keydown", "click"].forEach((type) =>
       document.addEventListener(type, onFirstGesture, { capture: true, passive: true })
     );
 
