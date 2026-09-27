@@ -4018,6 +4018,19 @@ body.is-inspecting .site-cursor {
     pointer-events: none;
   }
 
+  /* Mobile Safari fills the strip behind its bars from the scrolling page, not from fixed layers. While the menu
+     is open, the page beneath goes dark once the menu has slid in, so that strip is menu-black, not home content. */
+  main,
+  #site-footer {
+    transition: visibility 0s linear 0s;
+  }
+
+  body.menu-open main,
+  body.menu-open #site-footer {
+    visibility: hidden;
+    transition-delay: 0.8s;
+  }
+
   .site-menu__backdrop::before {
     position: absolute;
     inset: 0;

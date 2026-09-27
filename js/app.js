@@ -3037,14 +3037,29 @@
   }
 
   // Phones in Low Power Mode, and some browser settings, hold every video back until the visitor touches
-  // the page; the first touch then starts whichever autoplaying videos are on screen.
+  // the page. Safari lifts that hold per video, and only for a play() made during the touch itself, so the
+  // first touch starts the autoplaying videos on screen and briefly starts-and-pauses the ones further down;
+  // from then on they can start by themselves as they scroll into view.
   function initVideoKick() {
+    const onScreen = (video) => {
+      const rect = video.getBoundingClientRect();
+      return rect.height > 0 && rect.bottom >= 0 && rect.top <= window.innerHeight;
+    };
+    const unlocked = new WeakSet();
     const kick = () => {
       qsa("video").forEach((video) => {
         if (!video.paused || !(video.autoplay || video.muted) || !video.currentSrc) return;
-        const rect = video.getBoundingClientRect();
-        if (rect.bottom < 0 || rect.top > window.innerHeight || !rect.height) return;
-        video.play().catch(() => {});
+        if (onScreen(video)) {
+          video.play().catch(() => {});
+        } else if (video.muted && video.closest("main") && !unlocked.has(video)) {
+          unlocked.add(video);
+          video
+            .play()
+            .then(() => {
+              if (!onScreen(video)) video.pause();
+            })
+            .catch(() => {});
+        }
       });
     };
     ["touchend", "click", "keydown"].forEach((type) =>
