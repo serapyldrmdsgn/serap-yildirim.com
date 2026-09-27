@@ -13,8 +13,20 @@
   const TEXT_MAX_WIDTH = 0.88;
   const TEXT_FREE_SOURCES = ["assets/web/Intro/Intro.mp4", "Intro/Intro.mp4"];
   const TEXT_IMAGE = "assets/intro/intro-text.png";
-  // First frame of Intro.mp4, shown until the clip plays: iPhones in Low Power Mode hold it back until a touch.
+  // First frame of Intro.mp4, shown until anything moves.
   const STILL_IMAGE = "assets/web/Intro/intro-still.jpg";
+  // Portrait phones only ever show the middle of the frame, so they get a clip cropped to it (a quarter of
+  // the bytes) plus a sheet of its first frames, drawn until the clip plays: phones hold video back on slow
+  // connections and, in Low Power Mode, until the visitor touches the page.
+  const COMPACT_SOURCES = ["assets/web/Intro/intro-mobile.mp4"];
+  const COMPACT_RECT = [632 / 1920, 0, 656 / 1920, 1];
+  const COMPACT_MAX_ASPECT = 0.6;
+  const SPRITE = { src: "assets/web/Intro/intro-sprite.jpg", frames: 48, columns: 8, width: 328, height: 540, fps: 8 };
+  const CROSSFADE_SECONDS = 0.8;
+  // Colour of the page around the intro (#1a0103): the fabric dims into it at the top and bottom of phone
+  // screens so the bars mobile browsers paint in that colour join the picture instead of cutting it.
+  const EDGE_COLOR = [26 / 255, 1 / 255, 3 / 255];
+  const EDGE_FADE = { top: 110, bottom: 130 };
   // Canvas pixels the stage may draw: phones get their full screen density, very large screens a little less.
   const PIXEL_BUDGET = 4.2e6;
 
@@ -44,11 +56,33 @@
     uniform vec4 uTextRect;
     uniform float uTime;
     uniform vec3 uPointer;
+    uniform sampler2D uSprite;
+    uniform vec4 uVideoRect;
+    uniform vec4 uSpriteRect;
+    uniform float uMix;
+    uniform vec4 uEdge;
+    uniform vec3 uEdgeColor;
 
     vec2 toVideo(vec2 s) { return s * uCover.xy + uCover.zw; }
     // Like toVideo, but on narrow screens zoomed out so the whole name stays readable.
     vec2 toText(vec2 s) { return s * uTextCover.xy + uTextCover.zw; }
-    vec3 fabric(vec2 v) { return texture2D(uVideo, clamp(v, 0.0, 1.0)).rgb; }
+    // v is a point of the full 1920×1080 frame; each source covers the part of it given by its rect.
+    vec3 fabric(vec2 v) {
+      vec3 color = texture2D(uVideo, clamp((v - uVideoRect.xy) / uVideoRect.zw, 0.0, 1.0)).rgb;
+      if (uMix < 1.0) {
+        vec3 sprite = texture2D(uSprite, clamp((v - uSpriteRect.xy) / uSpriteRect.zw, 0.0, 1.0)).rgb;
+        color = mix(sprite, color, uMix);
+      }
+      return color;
+    }
+    // The grade of the original clip, then the screen edges settle into the colour behind the browser bars.
+    vec3 finish(vec2 s, vec3 color) {
+      float grey = dot(color, vec3(0.2126, 0.7152, 0.0722));
+      color = (mix(vec3(grey), color, 0.9) - 0.5) * 1.05 + 0.5;
+      float top = smoothstep(uEdge.x, uEdge.x + uEdge.y, s.y);
+      float bottom = smoothstep(uEdge.z, uEdge.z + uEdge.w, 1.0 - s.y);
+      return mix(uEdgeColor, color, min(top, bottom));
+    }
     vec4 lettering(vec2 v) {
       vec2 t = (v - uTextRect.xy) / uTextRect.zw;
       if (t.x < 0.0 || t.y < 0.0 || t.x > 1.0 || t.y > 1.0) return vec4(0.0);
@@ -147,8 +181,17 @@
       video.play().catch(() => {});
     };
 
+    const coarse = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+    const compact = coarse && section.clientWidth / Math.max(1, section.clientHeight) <= COMPACT_MAX_ASPECT;
+
     texture("uVideo", null, { fill: [30, 0, 4, 255] });
     texture("uText", null);
+    texture("uSprite", null, { fill: [30, 0, 4, 255] });
+    gl.uniform4f(uniform("uVideoRect"), 0, 0, 1, 1);
+    gl.uniform4f(uniform("uSpriteRect"), ...COMPACT_RECT);
+    gl.uniform1f(uniform("uMix"), 1);
+    gl.uniform3f(uniform("uEdgeColor"), ...EDGE_COLOR);
+    gl.uniform4f(uniform("uEdge"), 0, 0.0001, 0, 0.0001);
     // The lettering is resampled to its size on screen: sampled straight from the large image,
     // the thin strokes of the subtitle would vanish between pixels on small screens.
     const textImage = new Image();
@@ -181,12 +224,17 @@
     textImage.src = TEXT_IMAGE;
 
     // The same element keeps playing so app.js still restarts it when the curtain opens.
-    video.innerHTML = TEXT_FREE_SOURCES.map((src) => `<source src="${src}" type="video/mp4">`).join("");
-    video.lastElementChild.addEventListener("error", fallBack);
+    let videoRect = compact ? COMPACT_RECT : [0, 0, 1, 1];
+    const loadSources = (sources) => {
+      video.innerHTML = sources.map((src) => `<source src="${src}" type="video/mp4">`).join("");
+      video.lastElementChild.addEventListener("error", fallBack);
+      video.load();
+      video.play().catch(() => {});
+    };
     video.addEventListener("error", fallBack, { once: true });
-    video.load();
-    video.play().catch(() => {});
+    loadSources(compact ? COMPACT_SOURCES : TEXT_FREE_SOURCES);
     video.after(canvas);
+    section.classList.add("has-stage");
 
     let hasFrame = false;
     let stillReady = false;
@@ -199,16 +247,36 @@
     };
     still.src = STILL_IMAGE;
 
-    const GESTURES = ["touchend", "pointerup", "click", "keydown"];
-    const kick = () => {
-      if (!stopped && video.paused) video.play().catch(() => {});
+    // Sprite frames play until the clip delivers its own, then the clip is faded in over them.
+    let spriteReady = false;
+    let spriteFrame = -1;
+    let spriteStart = 0;
+    let mix = 1;
+    const sprite = new Image();
+    const spriteCell = document.createElement("canvas");
+    spriteCell.width = SPRITE.width;
+    spriteCell.height = SPRITE.height;
+    if (compact) {
+      sprite.onload = () => {
+        if (stopped || hasFrame) return;
+        spriteReady = true;
+        spriteStart = ctx.time;
+        request();
+      };
+      sprite.src = SPRITE.src;
+    }
+    const drawSprite = () => {
+      const period = 2 * (SPRITE.frames - 1);
+      const step = Math.floor((ctx.time - spriteStart) * SPRITE.fps) % period;
+      const index = step < SPRITE.frames ? step : period - step;
+      if (index === spriteFrame) return;
+      spriteFrame = index;
+      const paint = spriteCell.getContext("2d");
+      const sx = (index % SPRITE.columns) * SPRITE.width;
+      const sy = Math.floor(index / SPRITE.columns) * SPRITE.height;
+      paint.drawImage(sprite, sx, sy, SPRITE.width, SPRITE.height, 0, 0, SPRITE.width, SPRITE.height);
+      texture("uSprite", spriteCell);
     };
-    GESTURES.forEach((type) => document.addEventListener(type, kick, { capture: true, passive: true }));
-    video.addEventListener(
-      "playing",
-      () => GESTURES.forEach((type) => document.removeEventListener(type, kick, { capture: true })),
-      { once: true }
-    );
 
     const pointer = { x: 0.5, y: 0.5, vx: 0, vy: 0, active: false, down: false, moved: 0, presence: 0 };
     const ctx = {
@@ -223,7 +291,6 @@
       width: 1,
       height: 1,
       aspect: 1,
-      runway: 0,
       cover: [1, 1, 0, 0],
       textCover: [1, 1, 0, 0],
       curtainOpen: document.body.classList.contains("is-curtain-open"),
@@ -254,28 +321,42 @@
       ctx.width = width;
       ctx.height = height;
       ctx.aspect = width / height;
-
-      // On phones the section reaches up into a scroll runway (see initIntroRunway in app.js); the frame
-      // is composed for the part below it, which is what fills the screen.
-      ctx.runway = parseFloat(getComputedStyle(section).paddingTop) || 0;
-      const top = Math.min(0.5, ctx.runway / Math.max(1, cssHeight));
-      const aspect = ctx.aspect / (1 - top);
-      const cover =
+      const aspect = ctx.aspect;
+      ctx.cover =
         aspect > VIDEO_ASPECT
           ? [1, VIDEO_ASPECT / aspect, 0, (1 - VIDEO_ASPECT / aspect) / 2]
           : [aspect / VIDEO_ASPECT, 1, (1 - aspect / VIDEO_ASPECT) / 2, 0];
 
       const [textX, textY, textWidth, textHeight] = TEXT_RECT;
       const fitScale = textWidth / TEXT_MAX_WIDTH;
-      let textCover = cover;
-      if (fitScale > cover[0]) {
+      ctx.textCover = ctx.cover;
+      if (fitScale > ctx.cover[0]) {
         const scaleY = (fitScale * VIDEO_ASPECT) / aspect;
         const centerY = textY + textHeight / 2;
-        textCover = [fitScale, scaleY, textX - ((1 - TEXT_MAX_WIDTH) / 2) * fitScale, centerY * (1 - scaleY)];
+        ctx.textCover = [fitScale, scaleY, textX - ((1 - TEXT_MAX_WIDTH) / 2) * fitScale, centerY * (1 - scaleY)];
       }
-      const fromCanvas = ([sx, sy, ox, oy]) => [sx, sy / (1 - top), ox, oy - (sy * top) / (1 - top)];
-      ctx.cover = fromCanvas(cover);
-      ctx.textCover = fromCanvas(textCover);
+
+      // The cropped clip only covers portrait screens; turned sideways, the phone gets the full frame.
+      if (videoRect === COMPACT_RECT && aspect > COMPACT_MAX_ASPECT) {
+        videoRect = [0, 0, 1, 1];
+        hasFrame = false;
+        mix = 1;
+        spriteReady = false;
+        loadSources(TEXT_FREE_SOURCES);
+      }
+
+      // Phone screens: flat edge colour behind the status bar and browser toolbar, then a soft fade into the fabric.
+      if (coarse) {
+        const safeTop = parseFloat(getComputedStyle(section).getPropertyValue("--safe-top")) || 0;
+        const hiddenBottom = Math.max(0, cssHeight - window.innerHeight);
+        gl.uniform4f(
+          uniform("uEdge"),
+          (safeTop + 6) / cssHeight,
+          EDGE_FADE.top / cssHeight,
+          (hiddenBottom + 24) / cssHeight,
+          EDGE_FADE.bottom / cssHeight
+        );
+      }
       gl.uniform2f(uniform("uRes"), width, height);
       gl.uniform4f(uniform("uCover"), ...ctx.cover);
       gl.uniform4f(uniform("uTextCover"), ...ctx.textCover);
@@ -364,17 +445,32 @@
       ctx.time += dt;
       resize();
 
+      if (spriteReady && !hasFrame) {
+        drawSprite();
+        mix = 0;
+      } else if (hasFrame && mix < 1) {
+        mix = Math.min(1, mix + dt / CROSSFADE_SECONDS);
+        if (mix < 1 && spriteReady) drawSprite();
+      }
+      gl.uniform1f(uniform("uMix"), mix);
+
       const idle = now - pointer.moved > 1200;
       pointer.presence += ((pointer.active && !idle ? 1 : 0) - pointer.presence) * Math.min(1, dt * 5);
       pointer.vx *= Math.pow(0.02, dt);
       pointer.vy *= Math.pow(0.02, dt);
 
-      if (video.readyState >= 2 && (newFrame || !("requestVideoFrameCallback" in HTMLVideoElement.prototype))) {
+      // A clip that is held back still decodes its first frame; only a playing clip may replace the sprite.
+      if (
+        video.readyState >= 2 &&
+        !video.paused &&
+        (newFrame || !("requestVideoFrameCallback" in HTMLVideoElement.prototype))
+      ) {
         texture("uVideo", video);
         newFrame = false;
+        if (!hasFrame) gl.uniform4f(uniform("uVideoRect"), ...videoRect);
         hasFrame = true;
       }
-      if (!ready && textReady && (hasFrame || stillReady)) {
+      if (!ready && textReady && (hasFrame || stillReady || spriteReady)) {
         ready = true;
         canvas.classList.add("is-ready");
         cue?.classList.add("is-visible");

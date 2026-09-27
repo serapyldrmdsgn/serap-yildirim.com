@@ -3036,24 +3036,20 @@
     qs('meta[name="theme-color"]')?.setAttribute("content", EDGE_COLORS[edge]);
   }
 
-  // Safari 26 paints its status bar and toolbar in one flat colour while a page rests at the very top, and
-  // shows the page through them once it is scrolled. On touch screens the intro therefore reaches up into
-  // a short runway and the home page opens scrolled past it, so the intro fills the whole screen.
-  function initIntroRunway() {
-    const intro = qs("#home");
-    if (!intro || location.hash || !window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
-    document.documentElement.classList.add("has-intro-runway");
-    let touched = false;
-    window.addEventListener("touchstart", () => (touched = true), { once: true, passive: true });
-    const settle = () => {
-      const runway = parseFloat(getComputedStyle(intro).paddingTop) || 0;
-      if (touched || window.scrollY >= runway - 1) return;
-      window.scrollTo({ top: runway, behavior: "instant" });
-      updateScreenEdge();
+  // Phones in Low Power Mode, and some browser settings, hold every video back until the visitor touches
+  // the page; the first touch then starts whichever autoplaying videos are on screen.
+  function initVideoKick() {
+    const kick = () => {
+      qsa("video").forEach((video) => {
+        if (!video.paused || !(video.autoplay || video.muted) || !video.currentSrc) return;
+        const rect = video.getBoundingClientRect();
+        if (rect.bottom < 0 || rect.top > window.innerHeight || !rect.height) return;
+        video.play().catch(() => {});
+      });
     };
-    settle();
-    window.addEventListener("load", settle, { once: true });
-    whenCurtainOpens(settle);
+    ["touchend", "click", "keydown"].forEach((type) =>
+      document.addEventListener(type, kick, { capture: true, passive: true })
+    );
   }
 
   function initScreenEdge() {
@@ -3074,7 +3070,6 @@
   }
 
   const SOUND_SRC = "assets/audio/sax-and-piano.mp3";
-  const SOUND_VOLUME = 0.3;
   const SOUND_PREF_KEY = "serap-portfolio-sound";
   const SOUND_MUTED_KEY = "serap-portfolio-sound-muted";
   const SOUND_TIME_KEY = "serap-portfolio-sound-time";
@@ -3098,26 +3093,45 @@
   // The melody tries to start as the page opens; where the browser holds sound back until the visitor
   // touches, clicks or types, it starts with the first of those. It picks up on every page where the previous
   // one left off. Switching it off lasts for the visit (the tab's session); a later visit plays again.
+  // A video playing with its sound on silences it until that video stops.
   function initSoundtrack() {
     const button = qs("#sound-toggle");
     if (!button) return;
 
-    const savedTime = Number(readStored(sessionStorage, SOUND_TIME_KEY)) || 0;
     const audio = new Audio();
     audio.loop = true;
     audio.preload = "none";
-    audio.src = `${mediaURL(SOUND_SRC)}${savedTime > 0 ? `#t=${savedTime.toFixed(2)}` : ""}`;
+    audio.src = mediaURL(SOUND_SRC);
+
+    // Where the previous page left off; applied once the duration is known, which every browser honours.
+    let resumeAt = Number(readStored(sessionStorage, SOUND_TIME_KEY)) || 0;
+    audio.addEventListener("loadedmetadata", () => {
+      if (resumeAt > 0 && resumeAt < (audio.duration || Infinity) - 1) {
+        try {
+          audio.currentTime = resumeAt;
+        } catch {
+          // Not seekable yet; the melody simply starts from the top.
+        }
+      }
+      resumeAt = 0;
+    });
 
     try {
       localStorage.removeItem(SOUND_PREF_KEY);
     } catch {
       // An older build kept the choice across visits; nothing to clear without storage.
     }
+
+    // iOS ignores audio.volume; there the melody starts and stops without a fade.
+    audio.volume = 0.5;
+    const fades = Math.abs(audio.volume - 0.5) < 0.01;
+    audio.volume = 1;
+
     let wanted = readStored(sessionStorage, SOUND_MUTED_KEY) !== "1";
     let playing = false;
-    let starting = false;
-    let context = null;
-    let gain = null;
+    let pending = 0;
+    let pendingGesture = false;
+    let ducked = false;
     let fadeTimer = 0;
 
     const render = () => {
@@ -3126,31 +3140,11 @@
       button.setAttribute("aria-label", playing ? "Pause music" : "Play music");
     };
 
-    // iOS ignores audio.volume, so fades run through a gain node wherever Web Audio exists.
-    const connect = () => {
-      if (context) return;
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) return;
-      try {
-        context = new AudioContextClass();
-        gain = context.createGain();
-        gain.gain.value = 0;
-        context.createMediaElementSource(audio).connect(gain).connect(context.destination);
-        audio.volume = 1;
-      } catch {
-        context = null;
-        gain = null;
-      }
-    };
-
     const fadeTo = (value, seconds, done) => {
       window.clearInterval(fadeTimer);
-      if (gain && context) {
-        const now = context.currentTime;
-        gain.gain.cancelScheduledValues(now);
-        gain.gain.setValueAtTime(gain.gain.value, now);
-        gain.gain.linearRampToValueAtTime(value, now + seconds);
-        if (done) fadeTimer = window.setTimeout(done, seconds * 1000);
+      if (!fades || seconds <= 0) {
+        if (fades) audio.volume = value;
+        done?.();
         return;
       }
       const from = audio.volume;
@@ -3164,37 +3158,30 @@
       }, 40);
     };
 
-    // Web Audio must be woken inside the gesture itself; without one, a blocked resume can stay pending forever.
-    const wake = () => {
-      if (!context || context.state === "running") return Promise.resolve();
-      return Promise.race([context.resume(), new Promise((resolve) => window.setTimeout(resolve, 800))]);
-    };
-
+    // An attempt made without a gesture may still be waiting when the visitor's first touch arrives; the
+    // touch is never made to wait for it.
     const start = (fromGesture = false) => {
-      if (playing || starting) return;
-      starting = true;
-      if (fromGesture) connect();
-      const woken = wake();
-      if (!gain) audio.volume = 0;
+      if (playing || ducked || (pending && (pendingGesture || !fromGesture))) return;
+      pending += 1;
+      pendingGesture = fromGesture;
+      window.clearInterval(fadeTimer);
+      if (fades) audio.volume = 0;
       audio
         .play()
         .then(() => {
-          if (!context) connect();
-          return Promise.all([woken, wake()]);
-        })
-        .then(() => {
-          starting = false;
-          if (!wanted || (context && context.state !== "running")) {
+          pending = Math.max(0, pending - 1);
+          if (playing) return;
+          if (!wanted || ducked) {
             audio.pause();
             return;
           }
           playing = true;
-          fadeTo(SOUND_VOLUME, 2.4);
+          fadeTo(1, 2.4);
           render();
         })
         .catch(() => {
-          starting = false;
-          audio.pause();
+          pending = Math.max(0, pending - 1);
+          if (!playing && fades) audio.volume = 1;
         });
     };
 
@@ -3220,12 +3207,42 @@
       else stop();
     });
 
-    const onFirstGesture = (event) => {
-      if (!wanted || playing || button.contains(event.target)) return;
+    // Only events browsers count as a real activation; touchstart and a pointer's first contact are not.
+    const onGesture = (event) => {
+      if (!wanted || playing || ducked || button.contains(event.target)) return;
       start(true);
     };
-    ["touchstart", "pointerdown", "pointerup", "touchend", "mousedown", "keydown", "click"].forEach((type) =>
-      document.addEventListener(type, onFirstGesture, { capture: true, passive: true })
+    ["touchend", "pointerup", "mousedown", "keydown", "click"].forEach((type) =>
+      document.addEventListener(type, onGesture, { capture: true, passive: true })
+    );
+
+    // Videos playing with their sound on take the room; the melody returns when they stop.
+    const videoSounding = () =>
+      qsa("video").some((video) => !video.paused && !video.ended && !video.muted && video.volume > 0);
+    const syncDucking = () => {
+      const loud = videoSounding();
+      if (loud && !ducked) {
+        ducked = true;
+        if (playing) {
+          playing = false;
+          render();
+          fadeTo(0, 0.4, () => {
+            if (!playing) audio.pause();
+          });
+        }
+      } else if (!loud && ducked) {
+        ducked = false;
+        if (wanted) start(true);
+      }
+    };
+    ["play", "playing", "pause", "ended", "volumechange", "emptied"].forEach((type) =>
+      document.addEventListener(
+        type,
+        (event) => {
+          if (event.target instanceof HTMLVideoElement) syncDucking();
+        },
+        true
+      )
     );
 
     document.addEventListener("portfolio:navigate", () => {
@@ -3236,9 +3253,11 @@
       if (document.hidden) {
         saveTime();
         if (playing) {
-          fadeTo(0, 0.3, () => audio.pause());
           playing = false;
           render();
+          fadeTo(0, 0.3, () => {
+            if (!playing) audio.pause();
+          });
         }
       } else if (wanted && audio.currentTime > 0) {
         start();
@@ -3247,7 +3266,25 @@
     window.addEventListener("pagehide", saveTime);
 
     render();
-    if (wanted) start();
+    if (!wanted) return;
+    // Where the browser already says autoplay is off, the file is not fetched until the first gesture. On
+    // phones the home page lets the intro clip load first, so the picture moves before the music.
+    if (navigator.getAutoplayPolicy?.("mediaelement") === "disallowed") return;
+    const coarse = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+    const intro = page === "home" && coarse ? qs("#intro-video") : null;
+    if (!intro || intro.readyState >= 2) {
+      start();
+      return;
+    }
+    let held = true;
+    const release = () => {
+      if (!held) return;
+      held = false;
+      start();
+    };
+    intro.addEventListener("loadeddata", release, { once: true });
+    intro.addEventListener("error", release, { once: true });
+    window.setTimeout(release, 4000);
   }
 
   function boot() {
@@ -3256,11 +3293,11 @@
     initMenu();
     initPageTransitions();
     initScreenEdge();
+    initVideoKick();
     initSoundtrack();
 
     switch (page) {
       case "home":
-        initIntroRunway();
         renderHome();
         break;
       case "work":

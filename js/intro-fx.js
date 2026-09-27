@@ -98,7 +98,7 @@
         vec3 ink = mix(vec3(0.98, 0.96, 0.93), vec3(0.88, 0.46, 0.56), loose * 0.85);
         color = mix(color, ink, alpha);
       }
-      gl_FragColor = vec4(color, 1.0);
+      gl_FragColor = vec4(finish(s, color), 1.0);
     }
   `;
 
@@ -207,10 +207,9 @@
       profile(ctx);
 
       const update = () => {
-        const travelled = window.scrollY - ctx.runway;
-        const progress = Math.min(1.2, Math.max(0, travelled / Math.max(1, ctx.section.offsetHeight - ctx.runway)));
+        const progress = Math.min(1.2, Math.max(0, window.scrollY / Math.max(1, ctx.section.offsetHeight)));
         ctx.gl.uniform1f(ctx.uniform("uScroll"), progress);
-        if (!scrolled && travelled > 24) {
+        if (!scrolled && window.scrollY > 24) {
           scrolled = true;
           ctx.dismissCue();
         }
