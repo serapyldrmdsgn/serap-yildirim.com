@@ -13,6 +13,10 @@
   const TEXT_MAX_WIDTH = 0.88;
   const TEXT_FREE_SOURCES = ["assets/web/Intro/Intro.mp4", "Intro/Intro.mp4"];
   const TEXT_IMAGE = "assets/intro/intro-text.png";
+  // First frame of Intro.mp4, shown until the clip plays: iPhones in Low Power Mode hold it back until a touch.
+  const STILL_IMAGE = "assets/web/Intro/intro-still.jpg";
+  // Canvas pixels the stage may draw: phones get their full screen density, very large screens a little less.
+  const PIXEL_BUDGET = 4.2e6;
 
   const VERTEX = `
     attribute vec2 aPosition;
@@ -184,6 +188,28 @@
     video.play().catch(() => {});
     video.after(canvas);
 
+    let hasFrame = false;
+    let stillReady = false;
+    const still = new Image();
+    still.onload = () => {
+      if (stopped || hasFrame) return;
+      texture("uVideo", still);
+      stillReady = true;
+      request();
+    };
+    still.src = STILL_IMAGE;
+
+    const GESTURES = ["touchend", "pointerup", "click", "keydown"];
+    const kick = () => {
+      if (!stopped && video.paused) video.play().catch(() => {});
+    };
+    GESTURES.forEach((type) => document.addEventListener(type, kick, { capture: true, passive: true }));
+    video.addEventListener(
+      "playing",
+      () => GESTURES.forEach((type) => document.removeEventListener(type, kick, { capture: true })),
+      { once: true }
+    );
+
     const pointer = { x: 0.5, y: 0.5, vx: 0, vy: 0, active: false, down: false, moved: 0, presence: 0 };
     const ctx = {
       gl,
@@ -197,6 +223,7 @@
       width: 1,
       height: 1,
       aspect: 1,
+      runway: 0,
       cover: [1, 1, 0, 0],
       textCover: [1, 1, 0, 0],
       curtainOpen: document.body.classList.contains("is-curtain-open"),
@@ -211,9 +238,15 @@
     }
 
     const resize = () => {
-      const scale = Math.min(window.devicePixelRatio || 1, effect.maxPixelRatio || 1.5);
-      const width = Math.max(1, Math.round(section.clientWidth * scale));
-      const height = Math.max(1, Math.round(section.clientHeight * scale));
+      const cssWidth = section.clientWidth;
+      const cssHeight = section.clientHeight;
+      const scale = Math.min(
+        window.devicePixelRatio || 1,
+        effect.maxPixelRatio || 3,
+        Math.sqrt(PIXEL_BUDGET / Math.max(1, cssWidth * cssHeight))
+      );
+      const width = Math.max(1, Math.round(cssWidth * scale));
+      const height = Math.max(1, Math.round(cssHeight * scale));
       if (width === canvas.width && height === canvas.height) return;
       canvas.width = width;
       canvas.height = height;
@@ -221,22 +254,30 @@
       ctx.width = width;
       ctx.height = height;
       ctx.aspect = width / height;
-      ctx.cover =
-        ctx.aspect > VIDEO_ASPECT
-          ? [1, VIDEO_ASPECT / ctx.aspect, 0, (1 - VIDEO_ASPECT / ctx.aspect) / 2]
-          : [ctx.aspect / VIDEO_ASPECT, 1, (1 - ctx.aspect / VIDEO_ASPECT) / 2, 0];
-      gl.uniform2f(uniform("uRes"), width, height);
-      gl.uniform4f(uniform("uCover"), ...ctx.cover);
+
+      // On phones the section reaches up into a scroll runway (see initIntroRunway in app.js); the frame
+      // is composed for the part below it, which is what fills the screen.
+      ctx.runway = parseFloat(getComputedStyle(section).paddingTop) || 0;
+      const top = Math.min(0.5, ctx.runway / Math.max(1, cssHeight));
+      const aspect = ctx.aspect / (1 - top);
+      const cover =
+        aspect > VIDEO_ASPECT
+          ? [1, VIDEO_ASPECT / aspect, 0, (1 - VIDEO_ASPECT / aspect) / 2]
+          : [aspect / VIDEO_ASPECT, 1, (1 - aspect / VIDEO_ASPECT) / 2, 0];
 
       const [textX, textY, textWidth, textHeight] = TEXT_RECT;
       const fitScale = textWidth / TEXT_MAX_WIDTH;
-      if (fitScale > ctx.cover[0]) {
-        const scaleY = (fitScale * VIDEO_ASPECT) / ctx.aspect;
+      let textCover = cover;
+      if (fitScale > cover[0]) {
+        const scaleY = (fitScale * VIDEO_ASPECT) / aspect;
         const centerY = textY + textHeight / 2;
-        ctx.textCover = [fitScale, scaleY, textX - ((1 - TEXT_MAX_WIDTH) / 2) * fitScale, centerY * (1 - scaleY)];
-      } else {
-        ctx.textCover = ctx.cover;
+        textCover = [fitScale, scaleY, textX - ((1 - TEXT_MAX_WIDTH) / 2) * fitScale, centerY * (1 - scaleY)];
       }
+      const fromCanvas = ([sx, sy, ox, oy]) => [sx, sy / (1 - top), ox, oy - (sy * top) / (1 - top)];
+      ctx.cover = fromCanvas(cover);
+      ctx.textCover = fromCanvas(textCover);
+      gl.uniform2f(uniform("uRes"), width, height);
+      gl.uniform4f(uniform("uCover"), ...ctx.cover);
       gl.uniform4f(uniform("uTextCover"), ...ctx.textCover);
       uploadText();
       effect.resize?.(ctx);
@@ -326,12 +367,13 @@
       if (video.readyState >= 2 && (newFrame || !("requestVideoFrameCallback" in HTMLVideoElement.prototype))) {
         texture("uVideo", video);
         newFrame = false;
-        if (!ready && textReady) {
-          ready = true;
-          canvas.classList.add("is-ready");
-          cue?.classList.add("is-visible");
-          open();
-        }
+        hasFrame = true;
+      }
+      if (!ready && textReady && (hasFrame || stillReady)) {
+        ready = true;
+        canvas.classList.add("is-ready");
+        cue?.classList.add("is-visible");
+        open();
       }
       gl.uniform1f(uniform("uTime"), ctx.time);
       gl.uniform3f(uniform("uPointer"), pointer.x, pointer.y, pointer.presence);

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Intro — "Threads and the name": the cursor parts the vertical threads of the fabric like a bead
  * curtain and they sway back on a spring; the lettering knits itself together from threads when the
  * curtain opens and unravels into hanging strands as the page is scrolled away. Loose strands part
@@ -207,9 +207,10 @@
       profile(ctx);
 
       const update = () => {
-        const progress = Math.min(1.2, Math.max(0, window.scrollY / Math.max(1, ctx.section.offsetHeight)));
+        const travelled = window.scrollY - ctx.runway;
+        const progress = Math.min(1.2, Math.max(0, travelled / Math.max(1, ctx.section.offsetHeight - ctx.runway)));
         ctx.gl.uniform1f(ctx.uniform("uScroll"), progress);
-        if (!scrolled && window.scrollY > 24) {
+        if (!scrolled && travelled > 24) {
           scrolled = true;
           ctx.dismissCue();
         }

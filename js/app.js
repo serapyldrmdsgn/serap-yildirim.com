@@ -3036,6 +3036,26 @@
     qs('meta[name="theme-color"]')?.setAttribute("content", EDGE_COLORS[edge]);
   }
 
+  // Safari 26 paints its status bar and toolbar in one flat colour while a page rests at the very top, and
+  // shows the page through them once it is scrolled. On touch screens the intro therefore reaches up into
+  // a short runway and the home page opens scrolled past it, so the intro fills the whole screen.
+  function initIntroRunway() {
+    const intro = qs("#home");
+    if (!intro || location.hash || !window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
+    document.documentElement.classList.add("has-intro-runway");
+    let touched = false;
+    window.addEventListener("touchstart", () => (touched = true), { once: true, passive: true });
+    const settle = () => {
+      const runway = parseFloat(getComputedStyle(intro).paddingTop) || 0;
+      if (touched || window.scrollY >= runway - 1) return;
+      window.scrollTo({ top: runway, behavior: "instant" });
+      updateScreenEdge();
+    };
+    settle();
+    window.addEventListener("load", settle, { once: true });
+    whenCurtainOpens(settle);
+  }
+
   function initScreenEdge() {
     let frame = 0;
     window.addEventListener(
@@ -3240,6 +3260,7 @@
 
     switch (page) {
       case "home":
+        initIntroRunway();
         renderHome();
         break;
       case "work":

@@ -121,9 +121,15 @@ body::-webkit-scrollbar {
   height: 0;
 }
 
-body.menu-open,
 body.is-transitioning {
   overflow: hidden;
+}
+
+/* Safari 26 keeps its bars opaque over a locked page, so touch screens hold the page still from the menu instead. */
+@media (hover: hover) {
+  body.menu-open {
+    overflow: hidden;
+  }
 }
 
 body[data-page="lab"] main {
@@ -337,7 +343,8 @@ body.is-ready.is-curtain-open .site-header__role span {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: #020202;
+  overscroll-behavior: contain;
+  touch-action: none;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -353,6 +360,15 @@ body.menu-open .site-menu {
   visibility: visible;
   pointer-events: auto;
   transform: translateY(0);
+}
+
+/* Safari 26 spreads a fixed element's own background over its bars; painted here, the menu itself shows through them. */
+.site-menu::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: #020202;
+  content: "";
 }
 
 .site-menu__backdrop {
@@ -3979,4 +3995,11 @@ body.is-inspecting .site-cursor {
     justify-content: center;
     min-height: 100svh;
   }
+}
+
+html.has-intro-runway .home-intro {
+  --intro-runway: 4rem;
+  min-height: calc(100svh + var(--intro-runway));
+  min-height: calc(100lvh + var(--intro-runway));
+  padding-top: var(--intro-runway);
 }
