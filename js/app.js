@@ -253,16 +253,14 @@
               <a href="${escapeHTML(DATA.site.social.linkedin)}" target="_blank" rel="noopener noreferrer">LinkedIn</a>
             </div>
           </div>
-          <p class="site-footer__credit">
-            <span class="site-footer__credit-label">Designed &amp; built by</span>
-            <span class="site-footer__credit-names">
-              <a href="https://www.linkedin.com/in/erenayvaz" target="_blank" rel="noopener noreferrer">Eren Ayvaz</a>
-              <span class="site-footer__credit-mark" aria-hidden="true"></span>
-              <a href="${escapeHTML(DATA.site.social.linkedin)}" target="_blank" rel="noopener noreferrer">Serap Yıldırım</a>
-            </span>
-          </p>
           <div class="site-footer__bottom">
             <span>© 2026 Serap Yıldırım</span>
+            <p class="site-footer__credit">
+              Designed &amp; built by
+              <a href="https://www.linkedin.com/in/erenayvaz" target="_blank" rel="noopener noreferrer">Eren Ayvaz</a>
+              and
+              <a href="${escapeHTML(DATA.site.social.linkedin)}" target="_blank" rel="noopener noreferrer">Serap Yıldırım</a>
+            </p>
           </div>
         </footer>
       `;
