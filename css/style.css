@@ -1441,41 +1441,70 @@ body.is-transitioning .site-cursor {
   color: var(--white);
 }
 
+.site-footer__credit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.95rem;
+  margin: clamp(4.5rem, 9vw, 8rem) 0 0;
+  text-align: center;
+}
+
+.site-footer__credit-label {
+  color: rgba(248, 239, 235, 0.82);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+}
+
+.site-footer__credit-names {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem 1.15rem;
+}
+
+.site-footer__credit-names a {
+  color: var(--white);
+  font-size: clamp(1.05rem, 1.7vw, 1.45rem);
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  text-decoration-line: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.42em;
+  transition: color 0.25s ease;
+}
+
+.site-footer__credit-names a:hover,
+.site-footer__credit-names a:focus-visible {
+  color: var(--accent);
+}
+
+.site-footer__credit-mark {
+  width: 0.32rem;
+  height: 0.32rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 .site-footer__bottom {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.8rem 1.5rem;
-  margin-top: clamp(5rem, 10vw, 11rem);
+  margin-top: clamp(2.4rem, 4vw, 3.4rem);
   padding-top: 1.5rem;
   border-top: 1px solid var(--line-soft);
   color: var(--grey);
   font-size: 0.58rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-
-.site-footer__credit {
-  margin: 0;
-  text-align: right;
-}
-
-.site-footer__credit a {
-  color: inherit;
-  text-decoration-line: underline;
-  text-decoration-color: var(--line-soft);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.32em;
-  transition:
-    color 0.25s ease,
-    text-decoration-color 0.25s ease;
-}
-
-.site-footer__credit a:hover,
-.site-footer__credit a:focus-visible {
-  color: var(--white);
-  text-decoration-color: currentColor;
 }
 
 /* Shared page hero */
@@ -3775,10 +3804,6 @@ body.is-inspecting .site-cursor {
 
   .site-footer__bottom {
     flex-direction: column;
-  }
-
-  .site-footer__credit {
-    text-align: left;
   }
 
   .page-hero {
