@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Serap Yıldırım Lab — moving image, visual and spatial research.">
+  <title>Lab — Serap Yıldırım</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="lab">
+  <div id="site-header"></div>
+  <div id="site-menu"></div>
+  <div id="site-cursor"></div>
+  <div class="page-transition" id="page-transition" aria-hidden="true"></div>
+
+  <main>
+    <section class="lab-index">
+      <div class="lab-index__media-col">
+        <div class="lab-index__media" id="lab-fixed-media" aria-live="polite"></div>
+        <div class="lab-index__label" id="lab-label" aria-live="polite">
+          <p class="lab-index__label-meta"></p>
+          <p class="lab-index__label-text"></p>
+        </div>
+      </div>
+      <svg class="lab-thread" id="lab-thread" aria-hidden="true" focusable="false">
+        <path class="lab-thread__line" pathLength="1"></path>
+        <circle class="lab-thread__knot" r="3.5"></circle>
+      </svg>
+      <div class="lab-index__content">
+        <div class="lab-index__heading">
+          <span class="section-badge"><span class="section-badge__mark">S</span><span>Lab</span></span>
+          <p>Moving image, visual research, spatial research and field notes. Collected references are labelled as such.</p>
+        </div>
+        <nav class="lab-index__list" id="lab-list" aria-label="Lab items"></nav>
+      </div>
+    </section>
+  </main>
+
+  <div id="site-footer"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

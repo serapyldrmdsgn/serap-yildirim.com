@@ -1,0 +1,18 @@
+# Design sources and the scripts that produced the compressed media. The live site does not request them.
+source/
+tools/
+
+# Original photographs and videos. The site serves the compressed copies in assets/web.
+assets/projects/
+assets/lab/
+assets/home/
+assets/hero/
+Intro/
+assets/intro/*.mp4
+assets/avatar/*.png
+assets/avatar/*.jpg
+assets/avatar/*.jpeg
+
+.DS_Store
+Thumbs.db
+desktop.ini
