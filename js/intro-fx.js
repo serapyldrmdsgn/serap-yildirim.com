@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Intro — "Threads and the name": the cursor parts the vertical threads of the fabric like a bead
  * curtain and they sway back on a spring; the lettering knits itself together from threads when the
  * curtain opens and unravels into hanging strands as the page is scrolled away. Loose strands part
