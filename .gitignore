@@ -7,8 +7,8 @@ assets/projects/
 assets/lab/
 assets/home/
 assets/hero/
-Intro/
-assets/intro/*.mp4
+/Intro/
+/assets/intro/*.mp4
 assets/avatar/*.png
 assets/avatar/*.jpg
 assets/avatar/*.jpeg
