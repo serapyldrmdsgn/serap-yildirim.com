@@ -139,6 +139,9 @@
             <span>SERAP YILDIRIM</span>
           </a>
           <p class="site-header__role"><span>MULTIDISCIPLINARY DESIGNER</span></p>
+          <button class="sound-toggle" id="sound-toggle" type="button" aria-pressed="false" aria-label="Play music" data-cursor="Sound">
+            <span class="sound-toggle__bar"></span><span class="sound-toggle__bar"></span><span class="sound-toggle__bar"></span><span class="sound-toggle__bar"></span>
+          </button>
           <button class="menu-toggle" id="menu-toggle" type="button" aria-expanded="false" aria-controls="fullscreen-menu">
             Menu
           </button>
@@ -314,7 +317,6 @@
     };
 
     const activateWordVideo = (link) => {
-      if (!canHoverVideo) return;
       links.forEach((item) => {
         if (item !== link) resetWordVideo(item);
       });
@@ -324,7 +326,7 @@
       if (!wrapper || !video || !applyWordMask(link)) return;
 
       const showMaskedVideo = () => {
-        if (!applyWordMask(link)) return;
+        if (video.paused || !applyWordMask(link)) return;
         wrapper.classList.add("is-video-active");
         link.classList.add("is-video-active");
       };
@@ -358,12 +360,43 @@
       }
     };
 
-    links.forEach((link) => {
-      link.addEventListener("mouseenter", () => activateWordVideo(link));
-      link.addEventListener("mouseleave", () => resetWordVideo(link));
-      link.addEventListener("focus", () => activateWordVideo(link));
-      link.addEventListener("blur", () => resetWordVideo(link));
-    });
+    if (canHoverVideo) {
+      links.forEach((link) => {
+        link.addEventListener("mouseenter", () => activateWordVideo(link));
+        link.addEventListener("mouseleave", () => resetWordVideo(link));
+        link.addEventListener("focus", () => activateWordVideo(link));
+        link.addEventListener("blur", () => resetWordVideo(link));
+      });
+    }
+
+    // Without hover, the words take turns showing their film, top to bottom, for as long as the menu is open.
+    const SEQUENCE_START = 900;
+    const SEQUENCE_STEP = 1900;
+    let sequenceTimer = 0;
+    const stopSequence = () => {
+      window.clearTimeout(sequenceTimer);
+      sequenceTimer = 0;
+    };
+    const primeWordVideo = (link) => {
+      const video = qs(".site-menu__word-video", link);
+      if (!video || video.readyState >= 2) return;
+      if (video.preload !== "auto") {
+        video.preload = "auto";
+        video.load();
+      }
+    };
+    const runSequence = (index) => {
+      const link = links[index % links.length];
+      primeWordVideo(links[(index + 1) % links.length]);
+      activateWordVideo(link);
+      sequenceTimer = window.setTimeout(() => runSequence(index + 1), SEQUENCE_STEP);
+    };
+    const startSequence = () => {
+      if (canHoverVideo || reducedMotion || !links.length) return;
+      stopSequence();
+      primeWordVideo(links[0]);
+      sequenceTimer = window.setTimeout(() => runSequence(0), SEQUENCE_START);
+    };
 
     wordVideos.forEach((video) => {
       video.addEventListener("error", () => {
@@ -379,12 +412,15 @@
 
       if (open) {
         backdropVideo?.play().catch(() => {});
+        startSequence();
         setTimeout(() => toggle.focus(), 250);
       } else {
+        stopSequence();
         backdropVideo?.pause();
         links.forEach(resetWordVideo);
         if (restoreFocus) toggle.focus();
       }
+      updateScreenEdge();
     };
 
     toggle.addEventListener("click", () => {
@@ -413,11 +449,16 @@
     const VIDEO_HOLD_DURATION = reducedMotion ? 0 : 2000;
     const OPEN_DURATION = reducedMotion ? 220 : 1000;
     const CLOSE_DURATION = reducedMotion ? 80 : 650;
+    // Phones can spend most of the hold loading the next page; the curtain then waits a little for the film.
+    const VIDEO_GRACE = 1400;
+    const VIDEO_MIN_SHOW = 900;
     const TIMELINE_KEY = "serap-portfolio-transition-start";
     const transitionVideos = qsa(".page-transition__word-video", overlay);
     const words = qsa(".page-transition__word", overlay);
     const transitionTimers = new Set();
     let videoGeneration = 0;
+    let videoShownAt = 0;
+    let videoRefused = false;
     let navigating = false;
 
     const schedule = (callback, delay) => {
@@ -437,6 +478,7 @@
     const lockPage = (locked) => {
       document.body.classList.toggle("is-transitioning", locked);
       overlay.setAttribute("aria-hidden", String(!locked));
+      updateScreenEdge();
     };
 
     const readTimelineStart = () => {
@@ -488,6 +530,8 @@
 
     const stopTransitionVideos = () => {
       videoGeneration += 1;
+      videoShownAt = 0;
+      videoRefused = false;
       words.forEach((word) => word.classList.remove("has-active-video"));
       transitionVideos.forEach((video) => {
         video.classList.remove("is-active");
@@ -500,42 +544,46 @@
       });
     };
 
-    // The sequence clip lasts exactly VIDEO_HOLD_DURATION, so the clip clock equals the timeline clock.
+    // The sequence clip lasts exactly VIDEO_HOLD_DURATION, so the clip clock equals the timeline clock;
+    // a film that starts late keeps at least VIDEO_MIN_SHOW of the clip ahead of it.
     const startTransitionVideos = (timelineStart) => {
       stopTransitionVideos();
       if (reducedMotion || VIDEO_HOLD_DURATION <= 0) return;
       const generation = videoGeneration;
-      const initialElapsed = Math.max(0, Date.now() - timelineStart);
-      if (initialElapsed >= VIDEO_HOLD_DURATION) return;
+      if (Date.now() - timelineStart >= VIDEO_HOLD_DURATION + VIDEO_GRACE) return;
 
+      // Mobile Safari fetches nothing until play() is called, so playback starts at once and seeks once it can.
       transitionVideos.forEach((video) => {
         const word = video.closest(".page-transition__word");
-        const beginPlayback = () => {
-          const elapsed = Date.now() - timelineStart;
-          if (generation !== videoGeneration || elapsed >= VIDEO_HOLD_DURATION) return;
+        const syncToTimeline = () => {
+          if (generation !== videoGeneration || video.readyState < 1) return;
+          const clipEnd = video.duration || VIDEO_HOLD_DURATION / 1000;
+          const target = Math.max(0, Math.min((Date.now() - timelineStart) / 1000, clipEnd - VIDEO_MIN_SHOW / 1000));
+          if (Math.abs(video.currentTime - target) < 0.12) return;
           try {
-            video.playbackRate = 1;
-            video.currentTime = elapsed / 1000;
+            video.currentTime = target;
           } catch {
-            return;
+            // Seeking waits for metadata; loadedmetadata calls this again.
           }
-          video
-            .play()
-            .then(() => {
-              if (generation !== videoGeneration) return;
-              video.classList.add("is-active");
-              word?.classList.add("has-active-video");
-            })
-            .catch(() => {
-              video.classList.remove("is-active");
-              word?.classList.remove("has-active-video");
-            });
         };
-
-        if (video.readyState >= 1) beginPlayback();
-        else video.addEventListener("loadedmetadata", beginPlayback, { once: true });
+        video.playbackRate = 1;
+        syncToTimeline();
+        video.addEventListener("loadedmetadata", syncToTimeline, { once: true });
+        video
+          .play()
+          .then(() => {
+            if (generation !== videoGeneration) return;
+            syncToTimeline();
+            videoShownAt = videoShownAt || Date.now();
+            video.classList.add("is-active");
+            word?.classList.add("has-active-video");
+          })
+          .catch((error) => {
+            if (generation === videoGeneration && error?.name === "NotAllowedError") videoRefused = true;
+            video.classList.remove("is-active");
+            word?.classList.remove("has-active-video");
+          });
       });
-      schedule(stopTransitionVideos, VIDEO_HOLD_DURATION - initialElapsed);
     };
 
     const revealPage = (forceNewTimeline = false) => {
@@ -557,9 +605,10 @@
 
       const startOpening = () => {
         stopTransitionVideos();
-        const remaining = Math.max(0, TOTAL_DURATION - (Date.now() - timelineStart));
+        const remaining = Math.max(OPEN_DURATION, TOTAL_DURATION - (Date.now() - timelineStart));
         overlay.style.setProperty("--transition-open-duration", `${remaining}ms`);
         overlay.classList.remove("is-covered");
+        updateScreenEdge();
         markCurtainOpen();
         schedule(() => {
           overlay.classList.remove("is-visible", "is-opening");
@@ -569,8 +618,14 @@
         }, remaining);
       };
 
-      const holdRemaining = Math.max(0, VIDEO_HOLD_DURATION - (Date.now() - timelineStart));
-      schedule(startOpening, holdRemaining);
+      const latest = timelineStart + VIDEO_HOLD_DURATION + VIDEO_GRACE;
+      const openWhenSeen = () => {
+        const now = Date.now();
+        const due = videoShownAt ? videoShownAt + VIDEO_MIN_SHOW : latest;
+        if (reducedMotion || videoRefused || now >= Math.min(due, latest)) startOpening();
+        else schedule(openWhenSeen, Math.min(due, latest) - now);
+      };
+      schedule(openWhenSeen, Math.max(0, VIDEO_HOLD_DURATION - (Date.now() - timelineStart)));
     };
 
     const closeForNavigation = (destination) => {
@@ -579,6 +634,7 @@
       clearTransitionTimers();
       stopTransitionVideos();
       document.dispatchEvent(new Event("portfolio:close-menu"));
+      document.dispatchEvent(new Event("portfolio:navigate"));
       const timelineStart = Date.now();
       writeTimelineStart(timelineStart);
 
@@ -590,6 +646,7 @@
 
       void overlay.offsetWidth;
       overlay.classList.add("is-covered");
+      updateScreenEdge();
       schedule(() => {
         const releaseBlockedNavigation = () => {
           if (!navigating || document.hidden) return;
@@ -2928,11 +2985,220 @@
     `;
   }
 
+  const EDGE_COLORS = { page: "#3f0e15", intro: "#1d0508", menu: "#020202" };
+
+  // Status and tool bars of mobile browsers take the colour of whatever currently fills the screen.
+  function updateScreenEdge() {
+    const body = document.body;
+    let edge = "page";
+    if (!qs("#page-transition")?.classList.contains("is-covered")) {
+      if (body.classList.contains("menu-open")) {
+        edge = "menu";
+      } else if (page === "home") {
+        const intro = qs("#home");
+        if (intro && window.scrollY < intro.offsetHeight - 2) edge = "intro";
+      }
+    }
+    const root = document.documentElement;
+    root.classList.toggle("is-edge-intro", edge === "intro");
+    root.classList.toggle("is-edge-menu", edge === "menu");
+    qs('meta[name="theme-color"]')?.setAttribute("content", EDGE_COLORS[edge]);
+  }
+
+  function initScreenEdge() {
+    let frame = 0;
+    window.addEventListener(
+      "scroll",
+      () => {
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          updateScreenEdge();
+        });
+      },
+      { passive: true }
+    );
+    window.addEventListener("resize", updateScreenEdge, { passive: true });
+    updateScreenEdge();
+  }
+
+  const SOUND_SRC = "assets/audio/sax-and-piano.mp3";
+  const SOUND_VOLUME = 0.3;
+  const SOUND_PREF_KEY = "serap-portfolio-sound";
+  const SOUND_TIME_KEY = "serap-portfolio-sound-time";
+
+  function readStored(storage, key) {
+    try {
+      return storage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  function writeStored(storage, key, value) {
+    try {
+      storage.setItem(key, value);
+    } catch {
+      // Without storage the music simply starts from the top on the next page.
+    }
+  }
+
+  // Browsers only allow sound after a tap, click or key press, so the melody starts with the first one
+  // and picks up on every page where the previous one left off, unless the visitor has switched it off.
+  function initSoundtrack() {
+    const button = qs("#sound-toggle");
+    if (!button) return;
+
+    const savedTime = Number(readStored(sessionStorage, SOUND_TIME_KEY)) || 0;
+    const audio = new Audio();
+    audio.loop = true;
+    audio.preload = "none";
+    audio.src = `${mediaURL(SOUND_SRC)}${savedTime > 0 ? `#t=${savedTime.toFixed(2)}` : ""}`;
+
+    let wanted = readStored(localStorage, SOUND_PREF_KEY) !== "off";
+    let playing = false;
+    let starting = false;
+    let context = null;
+    let gain = null;
+    let fadeTimer = 0;
+
+    const render = () => {
+      button.classList.toggle("is-playing", playing);
+      button.setAttribute("aria-pressed", String(playing));
+      button.setAttribute("aria-label", playing ? "Pause music" : "Play music");
+    };
+
+    // iOS ignores audio.volume, so fades run through a gain node wherever Web Audio exists.
+    const connect = () => {
+      if (context) return;
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      try {
+        context = new AudioContextClass();
+        gain = context.createGain();
+        gain.gain.value = 0;
+        context.createMediaElementSource(audio).connect(gain).connect(context.destination);
+        audio.volume = 1;
+      } catch {
+        context = null;
+        gain = null;
+      }
+    };
+
+    const fadeTo = (value, seconds, done) => {
+      window.clearInterval(fadeTimer);
+      if (gain && context) {
+        const now = context.currentTime;
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(gain.gain.value, now);
+        gain.gain.linearRampToValueAtTime(value, now + seconds);
+        if (done) fadeTimer = window.setTimeout(done, seconds * 1000);
+        return;
+      }
+      const from = audio.volume;
+      const started = performance.now();
+      fadeTimer = window.setInterval(() => {
+        const t = Math.min(1, (performance.now() - started) / (seconds * 1000));
+        audio.volume = from + (value - from) * t;
+        if (t < 1) return;
+        window.clearInterval(fadeTimer);
+        done?.();
+      }, 40);
+    };
+
+    // Web Audio must be woken inside the gesture itself; without one, a blocked resume can stay pending forever.
+    const wake = () => {
+      if (!context || context.state === "running") return Promise.resolve();
+      return Promise.race([context.resume(), new Promise((resolve) => window.setTimeout(resolve, 800))]);
+    };
+
+    const start = (fromGesture = false) => {
+      if (playing || starting) return;
+      starting = true;
+      if (fromGesture) connect();
+      const woken = wake();
+      if (!gain) audio.volume = 0;
+      audio
+        .play()
+        .then(() => {
+          if (!context) connect();
+          return Promise.all([woken, wake()]);
+        })
+        .then(() => {
+          starting = false;
+          if (!wanted || (context && context.state !== "running")) {
+            audio.pause();
+            return;
+          }
+          playing = true;
+          fadeTo(SOUND_VOLUME, 2.4);
+          render();
+        })
+        .catch(() => {
+          starting = false;
+          audio.pause();
+        });
+    };
+
+    const stop = (seconds = 0.8) => {
+      if (!playing) return;
+      playing = false;
+      render();
+      fadeTo(0, seconds, () => {
+        if (!playing) audio.pause();
+      });
+    };
+
+    const saveTime = () => {
+      if (!audio.paused || audio.currentTime > 0) {
+        writeStored(sessionStorage, SOUND_TIME_KEY, String(audio.currentTime));
+      }
+    };
+
+    button.addEventListener("click", () => {
+      wanted = !playing;
+      writeStored(localStorage, SOUND_PREF_KEY, wanted ? "on" : "off");
+      if (wanted) start(true);
+      else stop();
+    });
+
+    const onFirstGesture = (event) => {
+      if (!wanted || playing || button.contains(event.target)) return;
+      start(true);
+    };
+    ["pointerup", "touchend", "mousedown", "keydown", "click"].forEach((type) =>
+      document.addEventListener(type, onFirstGesture, { capture: true, passive: true })
+    );
+
+    document.addEventListener("portfolio:navigate", () => {
+      saveTime();
+      stop(0.6);
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        saveTime();
+        if (playing) {
+          fadeTo(0, 0.3, () => audio.pause());
+          playing = false;
+          render();
+        }
+      } else if (wanted && audio.currentTime > 0) {
+        start();
+      }
+    });
+    window.addEventListener("pagehide", saveTime);
+
+    render();
+    if (wanted) start();
+  }
+
   function boot() {
     initMediaFallbacks();
     renderShell();
     initMenu();
     initPageTransitions();
+    initScreenEdge();
+    initSoundtrack();
 
     switch (page) {
       case "home":
